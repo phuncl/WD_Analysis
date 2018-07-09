@@ -2,6 +2,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+from photometry import reddenings as rd
 
 from matplotlib import rc
 rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
@@ -32,7 +33,7 @@ d = 1/prlx
 errd=d*errfrac
 
 # read abundances from file?
-fname = 'models/dab-v5.dk'
+#fname = 'models/dab-v5.dk'
 
 # q, Mwd, t_sink from Koester 2018 priv. comm.
 q = 10**(-10.3288) # mass fraction of convection zone
@@ -60,14 +61,14 @@ elements = {1:['H', 1, 0, 0, 0, 21015, 2.884e10],
             16:['S', 32, 0.0046, 0.0015, 2.5954, 54100, 4.449e5],
             20:['Ca', 40, 0.0162, 0.0002, 2.6397, 9070, 6.287e4],
             26:['Fe', 56, 0.288, 0.004, 2.4563, 182800, 8.380e5],
-            28:['Ni', 59, 0.0169, 0.0003, 2.4322, 10640, 4.780e4]} # USING FE TIMESCALE FOR NI
+            28:['Ni', 59, 0.0169, 0.0003, 2.4322, 10640, 4.780e4]} # CURRENTLY USING FE TIMESCALE FOR NI
 
 
 # measured abundances from model fitting
 # z: [phot abund, err phot abund]
 abundances = {1:[-0.75, 0.25],
               6:[-6.0, 0.1],
-              #7:[-6.1, 0.1],
+              7:[-5.8, 0.],
               8:[-4.7, 0.1],
               12:[-5.5, 0.1],
               13:[-6.2, 0.], # upper limit until optical
@@ -78,6 +79,10 @@ abundances = {1:[-0.75, 0.25],
               26:[-5.6, 0.1],
               28:[-6.7, 0.1]}
 
+acc_els = []
+for k in abundances.keys():
+    acc_els.append(elements[k][0])
+
 # nHe in cvz for pure helium atmosphere
 nHepure = Mcvz/(4*AMU)#
 # nHe, including H, = Mcvz / (MHe + nH/nHe*MH)
@@ -86,7 +91,13 @@ nHe = Mcvz / (AMU * (4 + 1*np.power(10, abundances[1][0]))) # nHe*AMU*4 + abund[
 # append abundance dictionary with n(Z)/n(He)
 for i in abundances:
     logZHe = abundances[i][0]
-    abundances[i].append(10**logZHe)
+    errlogZHe = abundances[i][1]
+    
+    nZHe = 10**logZHe
+    errnZHe = 2.303*nZHe*errlogZHe
+    
+    abundances[i].append(nZHe)
+    abundances[i].append(errnZHe)
     
     #if i[1] != -12 and i[1] != 0:
         #abund[int(i[0]/100)] = [i[1], 10**i[1]]
@@ -94,55 +105,91 @@ for i in abundances:
 
 ##########################################
 
-#si_nabund = 10**abund[14][0]
 # calculate abundances of accreted material (ie material in photosphere)
 accreted_abs = {}
+#accreted_abs_uplim = {} # REDUNDANT
 accreted_Mabs = {}
+#accreted_Mabs_uplim = {} # REDUNDANT
 for z in abundances:
     if z!=2:
         nZ = abundances[z][2] * nHe # number of Zatoms in cvz
+        errnZ = abundances[z][3] * nHe
         symb = abundances[z][0]
+        
         MZ = nZ * AMU * z # mass in cvz
-        accreted_abs[z] = nZ
-        accreted_Mabs[z] = MZ
+        errMZ = errnZ * AMU * z
+        
+        accreted_abs[z] = [nZ, errnZ]
+        accreted_Mabs[z] = [MZ, errMZ]
+        """ denote upper limits somehow
+        if abundances[z][2]:
+            accreted_abs[z] = nZ
+            accreted_Mabs[z] = MZ
+        else:
+            accreted_abs_uplims = nZ
+            accreted_Mabs_uplim = MZ
+        """
 
-nSi = accreted_abs[14]
-mSi = accreted_Mabs[14]
-# calculate numerical abundances for BE composition
-BE_ZSi = []
-mBE_ZSi = []
-CI_ZSi = []
-mCI_ZSi = []
-nSippm = elements[14][5]/(10**6) / 28 #  Si ppm by num in CI chonds
+# Silicon numbers  -for normalisation
+nSi = accreted_abs[14][0]
+mSi = accreted_Mabs[14][0]
+nSippm = elements[14][5]/(10**6) / 28 # Si ppm by num in CI chonds
 Sippm = elements[14][5]/(10**6) # mass Si ppm in CI chondrites
+solnSi = elements[14][6] # Si abundance is solar, = 1e6 by definition of cosmochemical scale
+solmSi = elements[14][6] * 28 # Si mass abundance in solar 
+
+# calculate numerical/mass abundances for BE and CI composition
+BE_ZSi, mBE_ZSi = [], []
+CI_ZSi, mCI_ZSi = [], []
+sol_ZSi, msol_ZSi = [], []
 
 for z in abundances:
     if z!=2:
+        # all this is calculated from literature values
         BE_ZSi.append((elements[z][2] / elements[z][1]) / (elements[14][2] / elements[14][1]))
+        #errBE_ZSi.append()
         mBE_ZSi.append(elements[z][2] / elements[14][2])
         
         nppm = elements[z][5]/(10**6) / elements[z][1]
         ppm = elements[z][5]/(10**6)
-        
         CI_ZSi.append(nppm/nSippm)
         mCI_ZSi.append(ppm/Sippm)
+        
+        sol_ZSi.append(elements[z][6]/solnSi) # solar number abundance relative to Si
+        msol_ZSi.append(elements[z][6]*elements[z][1]/solmSi) # solar mass abundance relative to Si
 
+
+# create abundance profiles relative to BE for CI and sol
 BE_ZSi = np.asarray(BE_ZSi)
 mBE_ZSi = np.asarray(mBE_ZSi)
 
 CI_ZSi = np.asarray(CI_ZSi)
 mCI_ZSi = np.asarray(mCI_ZSi)
-
 CIBE_ZSi = CI_ZSi/BE_ZSi
 mCIBE_ZSi = mCI_ZSi/mBE_ZSi
 
-acc_els = list(accreted_abs.keys())
-acc_absSi = np.asarray(list(accreted_abs.values()))/nSi / BE_ZSi
-acc_mabs = np.asarray(list(accreted_Mabs.values()))/mSi / mBE_ZSi
+sol_ZSi = np.asarray(sol_ZSi)
+msol_ZSi = np.asarray(msol_ZSi)
+solBE_ZSi = sol_ZSi/BE_ZSi
+msolBE_ZSi = msol_ZSi/mBE_ZSi
+
+# FOLD IN Si ERROR HERE TOO?
+acc_absSi = np.asarray([accreted_abs[x][0] for x in abundances.keys()])/nSi / BE_ZSi
+# err dz = dx/x + dy/y
+#erracc_absSi = np.asarray([accreted_abs[x][1]/accreted_abs[x][0] for x in abundances.keys()]) + accreted_abs[14][1]/accreted_abs[14][0] # include Si - not needed?
+erracc_absSi = np.asarray([accreted_abs[x][1] for x in abundances.keys()])/nSi / BE_ZSi # purely error on Z, not Si too
+
+# mark out upper limits
+upperlims = np.logical_or(erracc_absSi==0, erracc_absSi==np.inf)
+# hold onto upper limits as 40%
+erracc_absSi[np.argwhere(np.asarray([accreted_abs[x][1] for x in abundances.keys()])==0)] = 0.4*acc_absSi[np.argwhere(np.asarray([accreted_abs[x][1] for x in abundances.keys()])==0)]
+
+#acc_absSi = np.asarray(list(accreted_abs.values()))/nSi / BE_ZSi
+#acc_mabs = np.asarray(list(accreted_Mabs.values()))/mSi / mBE_ZSi
 
 
 # CALCULATE STEADY STATE ABUNDANCES
-
+""" BROKEN BY ERRORS
 mSiSS = accreted_Mabs[14]/np.power(10, elements[14][4]) # MSi / tSi
 mOSS = accreted_Mabs[8]/np.power(10, elements[8][4]) # MO/tO
 
@@ -163,6 +210,8 @@ for z in abundances:
 
 acc_mabsSS = np.asarray(list(SS_mabs.values()))/ mBE_ZSi
 acc_mabsSS[acc_mabsSS<0] = None
+"""
+
 
 # plot ___ relative to bulk earth
 fig = plt.figure()
@@ -170,19 +219,27 @@ fig = plt.figure()
 plt.title('Parent Body Number Abundances')
 a1 = plt.gca()
 a1.axhline(1, color='grey', linestyle='--', label='Bulk Earth')
-a1.plot(range(len(acc_els)), CIBE_ZSi, label='CI Chondrites', linestyle='--', color='orange')
-# solar
-a1.scatter(range(len(acc_els)), acc_absSi, color='black', label='Early State')
-#a1.scatter(range(len(acc_els)), acc_absSi, color='blue', marker='.', label='Mass') #  same as by number abundance
-a1.scatter(range(len(acc_els)), acc_mabsSS, color='green', marker='^', label='Steady State') # Minimally different
-#a1.set_xticklabels(range(len(acc_els)), acc_els)
+a1.plot(range(len(acc_els)), CIBE_ZSi, label='CI Chondrite', linestyle='--', color='orange')
+a1.plot(range(len(acc_els)), solBE_ZSi, label='Solar', linestyle='--', color='red')
+
+#abnd_errs
+
+# show upper limit measurements here
+# skip H, not in BE
+
+a1.errorbar(range(1, len(acc_els)), acc_absSi[1:], erracc_absSi[1:], uplims=upperlims[1:], ls='', color='black', marker='_', label='Early State')
+
+
+#a1.scatter(range(len(acc_els)), acc_absSi, color='black', marker='o', label='Early State')
+#a1.scatter(range(len(acc_els)), acc_mabsSS, color='green', marker='o', label='Steady State') # Minimally different, worse
+a1.set_xlim(auto=False)
 a1.semilogy()
 plt.xlabel('Element')
-plt.xticks(range(len(acc_els)), acc_els)
+plt.xticks(range(1, len(acc_els)), acc_els[1:])
 a1.set_ylabel('Z/Si [APASS 2047] / Z/Si [BE]')
-a1.set_ylim(3e-1, 4e1)
+#a1.set_ylim(3e-1, 4e1)
 a1.legend()
-plt.show()
+plt.show(block=False)
 
 
 # Abundance plot in early phase normalised to Iron
@@ -215,15 +272,17 @@ plt.show()
 """
 
 acc_absSi_CI = np.asarray(list(accreted_abs.values()))/nSi / CI_ZSi
-BECI_ZSi = BE_ZSi/np.asarray(CI_ZSi)
+BECI_ZSi = BE_ZSi / CI_ZSi
+solCI_ZSi = sol_ZSi / CI_ZSi
 
 # plot with baseline of CI Chondrite composition
-"""
+
 fig = plt.figure()
 plt.title('Parent Body Number Abundances')
 a1 = plt.gca()
 a1.axhline(1, color='orange', linestyle='--', label='CI Chondrite')
 a1.plot(range(len(acc_els)), BECI_ZSi, label='Bulk Earth', linestyle='--', color='grey')
+a1.plot(range(len(acc_els)), solCI_ZSi, label='Solar', linestyle='--', color='red')
 a1.scatter(range(len(acc_els)), acc_absSi_CI, color='black', label='Early Phase')
 plt.xticks(range(len(acc_els)), acc_els)
 a1.semilogy()
@@ -231,7 +290,7 @@ plt.xlabel('Element')
 a1.set_ylabel('Z/Si [APASS 2047] / Z/Si [CI]')
 a1.legend()
 plt.show(block=False)
-"""
+
 
 pb_acc = {}
 for z in abundances:
