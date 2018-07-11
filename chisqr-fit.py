@@ -8,11 +8,13 @@ import numpy.ma as ma
 import matplotlib.pyplot as plt
 import glob as g
 import csv
+import sys
 
 from scipy import interpolate
 from scipy import integrate as spint
 from photometry import reddenings as rd
 
+from cycler import cycler
 from astLib import astSED
 from photometry import phot
 
@@ -20,6 +22,29 @@ from matplotlib import rc
 rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
 rc('text', usetex=True)
 
+
+
+####    CONSTANTS
+
+prlx = 0.01017
+errprlx = 0.00008
+D = 1/prlx
+errD = D * errprlx/prlx
+D += errD * 0
+
+pc2cm = 3.086e18 # 1 pc in cgs
+Rsun = 6.96e10 # Solar radius in cgs
+G = 6.674e-08 # cgs
+
+RV = 35000 # km/s away
+RV += 0
+BETA = RV/3e8
+EBV = 0.01
+
+PBD = rd.psb_dict # passband file locations
+
+plots = 0
+OLD = 1
 
 integration_regions = (1155, 1325, 1360, 1395, 1420) #REDUNDANT
 
@@ -288,7 +313,7 @@ def rx2_spec(mod_uv, uv_dat, mod_opt, opt_dat, mnam, masking=True, makeplot=Fals
         
         plt.suptitle('Combined $\chi^2$={:.5f} for {}'.format(big_rchisq, mnam.replace('_', ' ')))
         #plt.show()
-        plt.savefig('chisqr-results/plots/sgrid2018/uv+opt_{}.pdf'.format(mnam), dpi = 128, format='pdf')
+        plt.savefig('chisqr-results/plots/grid2018/uv+xsh_{}.pdf'.format(mnam), dpi = 128, format='pdf')
         plt.close('all')
     
     return rchisq, opt_rchisq, big_rchisq
@@ -298,7 +323,8 @@ def model_to_data(model_name, uv, optical):
     """Fit model to data
     Calculate a rescaling value and a chi squared"""
     # open model
-    modl = np.genfromtxt(model_name)    
+    if not OLD: modl = np.genfromtxt(model_name)    
+    elif OLD: modl = np.genfromtxt(model_name, skip_header=52) # old grid
     modl[:,1] *= 0.25e-8 # translate to Eddington flux
     
     # lsf convolution
@@ -310,12 +336,20 @@ def model_to_data(model_name, uv, optical):
     modl_opt, Av = rd.deredden_fix(redshift_wavelengths(modl, BETA), -0.01)
     
     # model details
-    mdets = model_name.split('/')[-1][4:-3] # skip pre-/suffix
-    teff = float(mdets.split('_')[0])
-    logg = float(mdets.split('_')[1].split('H')[0])
-    hyhe = float(mdets.split('H')[-1])
-    outnam = 'chi2_t{}_g{}_h{}'.format(teff, logg, hyhe)
-    #print(teff, logg, hyhe)
+    if not OLD:
+        mdets = model_name.split('/')[-1][4:-3] # skip pre-/suffix
+        teff = float(mdets.split('_')[0])
+        logg = float(mdets.split('_')[1].split('H')[0])
+        hyhe = float(mdets.split('H')[-1])
+        outnam = 'chi2_t{}_g{}_h{}'.format(teff, logg, hyhe)
+    
+    # old grid model details
+    elif OLD:
+        mdets = model_name.split('/')[-1][1:-3]
+        teff = float(mdets.split('_')[0])
+        logg = float(mdets.split('_')[1][1:])/100
+        hyhe = float(mdets.split('_')[-1][1:])
+        outnam = 'chi2_t{}_g{}_h{}'.format(teff, logg, hyhe)
     
     # get model-specific mass/radius, calculate rescaling from radius
     model_m = mgrid(teff, logg)
@@ -335,7 +369,7 @@ def model_to_data(model_name, uv, optical):
     #plt.plot(modl_scaled[:,0], modl_scaled[:,1])
     
     # calculate a chi square value for the fit
-    rx2 = rx2_spec(modl_hst, uv, modl_opt, optical, outnam, makeplot=True)
+    rx2 = rx2_spec(modl_hst, uv, modl_opt, optical, outnam, makeplot=plots)
     return [teff, logg, hyhe, rx2[0], rx2[1], rx2[2]]
     
 
@@ -358,42 +392,153 @@ def read_massradius(file_loc):
     return massgrid, radgrid
     
 
-####    CONSTANTS
+def spec_phot_rescale(spec_raw, plot_rescaling=False, test_model=False):
+    """"""
+    wmin, wmax = min(spec_raw[:,0]), max(spec_raw[:,0])
+    spec_SED = astSED.SED(spec_raw[:,0], spec_raw[:,1])
+    spec_filters = []
+    flux_ratios = []
+    for p in photometry:
+        filt = p[-1]
+        flux = p[1]
+        errflux = p[2]
+        pband = PBD[filt]
+        pbandmin = min([x[0] for x in pband.asList() if x[1]>0.00005])
+        pbandmax = max([x[0] for x in pband.asList() if x[1]>0.00005])
+        if errflux==0: continue
+        if (pbandmin > wmin) and (pbandmax < wmax):
+            spec_filters.append(p)
+            spec_flux = spec_SED.calcFlux(pband)
+            r = flux/spec_flux
+            errr = errflux/spec_flux
+            flux_ratios.append([r, errr])
+    
+    f_ratios = np.asarray(flux_ratios)
+    mean_numer = np.sum(f_ratios[:,0] / np.square(f_ratios[:,1]))
+    mean_denom = np.sum(1 / np.square(f_ratios[:,1]))
+    resc_fac = mean_numer / mean_denom
+    resc_facerr= np.sqrt(1 / mean_denom)
+    
+    spec_output = np.copy(spec_raw)
+    spec_output[:,1] *= resc_fac
+    spec_output[:,2] = spec_raw[:,1] * np.sqrt((spec_raw[:,2]*resc_fac/spec_raw[:,1])**2 + (spec_raw[:,1]*resc_facerr/resc_fac)**2) 
+    
+    # plot rescaling output as option?
+    if plot_rescaling == True:
+        f, (a1, a2) = plt.subplots(2,1, sharex=True)
+        a1.set_prop_cycle(cycler('color', ['indigo', 'b', 'g', 'lime', 'c', 'm', 'y', 'r']))
+        a2.set_prop_cycle(cycler('color', ['indigo', 'b', 'g', 'lime', 'c', 'm', 'y', 'r']))
 
-prlx = 0.01017
-errprlx = 0.00008
-D = 1/prlx
-errD = D * errprlx/prlx
-D += errD * 0
+        a1.plot(spec_raw[:,0], spec_raw[:,1], 'grey', lw=2, alpha=0.5)
+        a1.plot(spec_output[:,0], spec_output[:,1], 'k', lw=1)
+        a1.set_xlim(auto=False)
+        a1.set_ylim(auto=False)
+        a1.set_yscale('linear')
+        if test_model.any():
+            a1.plot(test_model[:,0], test_model[:,1], 'r')
+        for pos, f in enumerate(spec_filters):
+            farray = np.asarray(PBD[f[-1]].asList())
+            #a1.errorbar(f[0], f[1], f[2], fmt='.', color=colrs[pos], label=f[-1].replace('_', ' '))
+            a1.plot(f[0], f[1], 'o', ls='-', label=f[-1].replace('_', ' '))
+            a2.plot(farray[:,0], farray[:,1], label=f[-1].replace('_', ' '))
+        a1.legend()
+        ylims = a2.get_ylim()
+        a2.set_ylim(0, ylims[1])
+        plt.subplots_adjust(hspace=0)
+        a1.tick_params(which='both', direction='in', top=True, right=True)
+        a2.tick_params(which='both', direction='in', top=True, right=True)
+        plt.show()
+    
+    return spec_output, spec_filters
 
-pc2cm = 3.086e18 # 1 pc in cgs
-Rsun = 6.96e10 # Solar radius in cgs
-G = 6.674e-08 # cgs
-
-RV = 35000 # km/s away
-RV += 0
-BETA = RV/3e8
-EBV = 0.01
-
-PBD = rd.psb_dict # passband file locations
 
 
 ####    MAIN
-
 spec_uv = np.genfromtxt('uv/APASSJ204713.82-125909.5_2017-11-04.dat', usecols=(0,1,2))
 photometry = photometrics()
+mgrid, rgrid = read_massradius('mass_radius/mr.dat')
+
+
+####    TEST MODEL
+test_modl_name = 'models/subgrid2018/DBA_18100.0_8.1H-1.1.dk' # best fit
+test_modl = np.genfromtxt(test_modl_name)
+test_modl[:,1] *= 0.25e-8 # translate to Eddington flux
+#test_modl = lsf_conv(test_modl)
+test_modl, Av = rd.deredden_fix(redshift_wavelengths(test_modl, BETA), -0.01)
+
+
+# rescale model as appropriate by distance
+modl_m = mgrid(18100, 8.1)
+modl_r = rgrid(18100, 8.1)
+s = 4*np.pi * modl_r**2 / (D*pc2cm)**2
+errs = 2*4*np.pi * modl_r**2 * errD/D
+
+test_modl[:,1] *= s
 
 
 ####    OPTICAL
-int_raw = np.genfromtxt('optical/J2047-1259_201505_int.dat')
-int_min, int_max = min(int_raw[:,0]), max(int_raw[:,0])
+#int_raw = np.genfromtxt('optical/J2047-1259_201505_int.dat')
+#int_spec, int_filters = spec_phot_rescale(int_raw, plot_rescaling=True, test_model=test_modl)
 
+xsh_uvb_raw = np.genfromtxt('optical/xshooter_uvb.dat')
+cut_inds = np.where(xsh_uvb_raw[:,0] > 3200)
+xsh_uvb_cut = xsh_uvb_raw[cut_inds]
+#xsh_uvb, xsh_filters = spec_phot_rescale(xsh_uvb_cut, plot_rescaling=False, test_model=test_modl)
+#uvb_max = max(xsh_uvb[:,0])
+
+xsh_vis_raw = np.genfromtxt('optical/xshooter_vis.dat')
+cut_inds = np.where(xsh_vis_raw[:,0] > 5550)
+xsh_vis_cut = xsh_vis_raw[cut_inds]
+#xsh_vis, xsh_visfilters = spec_phot_rescale(xsh_vis_cut, plot_rescaling=False, test_model=test_modl)
+
+#xsh_all = np.concatenate((xsh_uvb, xsh_vis))
+xsh_all_raw = np.concatenate((xsh_uvb_cut, xsh_vis_cut))
+xsh_all, xsh_allfilters = spec_phot_rescale(xsh_all_raw, plot_rescaling=True, test_model=test_modl)
+
+np.savetxt('optical/xshooter-all-rescaled.dat', xsh_all)
+
+#plt.figure()
+#plt.plot(xsh_all[:,0], xsh_all[:,1], 'k')
+#plt.plot(test_modl[:,0], test_modl[:,1], 'r')
+#plt.show()
+# fit to test modl
+#t = model_to_data(test_modl_name, np.copy(spec_uv), xsh_uvb)
+
+#sys.exit(0)
+
+gridpath = 'models/OLD-2013/DAB-grid/'
+modl_grid = g.glob(gridpath+'*.dk')
+
+rx2_data = []
+i=1
+for m in modl_grid:
+    rx2_data.append(model_to_data(m, spec_uv, xsh_all))
+    print('{:.2f}%'.format(100*i/len(modl_grid)))
+    i+=1
+    
+# save rx2_data to file
+save_dest = 'chisqr-results/OLD2013-fitvals_uv+xsh_d{:.3f}_b{}.dat'.format(D, int(RV))
+print("Saving output data to {}".format(save_dest))
+#input("Press Ctrl + C to abort this process, or Return to continue.".format(save_dest))
+
+np.savetxt(save_dest, rx2_data, delimiter=',',
+           header='Teff,logg,H/He,UV_Rchisq,OPT_Rchisq,TOTAL_Rchisq',
+           fmt=['%i', '%.2f', '%.2f', '%.6e', '%.6e', '%.6e'])
+
+
+
+
+
+
+# old int rescaling, replaced by functions
+"""
 # need to rescale int spectrum to photometry 
 # only filters encompassed by spectrum
 int_filters = []
 for i in photometry:
     f = i[-1]
     pband = PBD[f]
+    # reasonable inclusion limits
     pbandmin = min([x[0] for x in pband.asList() if x[1]>0.00005])
     pbandmax = max([x[0] for x in pband.asList() if x[1]>0.00005])
     if (pbandmin > int_min) and (pbandmax<int_max): int_filters.append(i)
@@ -422,75 +567,4 @@ int_spec[:,1] *= resc_fac
 # rescaling includes error
 int_spec[:,2] = int_raw[:,1] * np.sqrt((int_raw[:,2]*resc_fac/int_raw[:,1])**2 + (int_raw[:,1]*resc_facerr/resc_fac)**2) 
 int_bot, int_top = min(int_spec[:,1]), max(int_spec[:,1])
-np.savetxt('optical/int_photrescaled.dat', int_spec)
-
-
-# plot optical rescaling result
-"""
-colrs = ('b', 'g', 'c', 'm', 'y', 'r')
-f, (a1, a2) = plt.subplots(2,1, sharex=True)
-# show int spec, rescaled, and photometry points used, and in panel below show filter profiles
-a1.plot(int_raw[:,0], int_raw[:,1], 'grey', lw=1) # int spec
-a1.plot(int_spec[:,0], int_spec[:,1], 'k', lw=1)# int spec rescaled by phot
-a1.plot(test_modl[:,0], test_modl[:,1], 'r') # model, rescaled by radius/distance factor
-for pos, f in enumerate(int_filters):
-    farray = np.asarray(PBD[f[-1]].asList())
-    #a1.errorbar(f[0], f[1], f[2], fmt='.', color=colrs[pos], label=f[-1].replace('_', ' '))
-    a1.plot(f[0], f[1], 'o', ls='-', color=colrs[pos], label=f[-1].replace('_', ' '))
-    a2.plot(farray[:,0], farray[:,1], color=colrs[pos], label=f[-1].replace('_', ' '))
-    a1.set_xlim(3500, 7200)
-    a1.set_ylim(0, 5e-15)
-    a2.set_ylim(0, 0.00135)
-
-# SHOW LEGEND
-a1.legend()
-#a2.legend()
-plt.subplots_adjust(hspace=0)
-a1.tick_params(which='both', direction='in', top=True, right=True)
-a2.tick_params(which='both', direction='in', top=True, right=True)
-plt.show()
-"""
-
-mgrid, rgrid = read_massradius('mass_radius/mr.dat')
-
-gridpath = 'models/subgrid2018/'
-modl_grid = g.glob(gridpath+'*.dk')
-
-
-#rx2_data = np.empty((len(modl_grid), 4))
-rx2_data = []
-i=1
-for m in modl_grid:
-    rx2_data.append(model_to_data(m, spec_uv, int_spec))
-    print('{:.2f}%'.format(100*i/len(modl_grid)))
-    i+=1
-    
-# save rx2_data to file
-save_dest = 'chisqr-results/sgrid2018-fitvals_uv+opt_d{:.3f}_b{}.dat'.format(D, int(RV))
-print("Saving output data to {}".format(save_dest))
-#input("Press Ctrl + C to abort this process, or Return to continue.".format(save_dest))
-
-np.savetxt(save_dest, rx2_data, delimiter=',',
-           header='Teff,logg,H/He,UV_Rchisq,OPT_Rchisq,TOTAL_Rchisq',
-           fmt=['%i', '%.2f', '%.2f', '%.6e', '%.6e', '%.6e'])
-
-
-"""
-####    TEST MODEL
-test_modl_name = 'models/grid2018/DBA_18100.0_8.1H-1.0.dk' # (best fit)
-test_modl = np.genfromtxt(test_modl_name)
-test_modl[:,1] *= 0.25e-8 # translate to Eddington flux
-#test_modl = lsf_conv(test_modl)
-test_modl, Av = rd.deredden_fix(redshift_wavelengths(test_modl, BETA), -0.01)
-
-
-# rescale model as appropriate by distance
-modl_m = mgrid(18100, 8.1)
-modl_r = rgrid(18100, 8.1)
-s = 4*np.pi * modl_r**2 / (D*pc2cm)**2
-errs = 2*4*np.pi * modl_r**2 * errD/D
-test_modl[:,1] *= s
-
-#x, y = lsf_conv(test_modl)
-t = model_to_data(test_modl_name, np.copy(spec_uv), int_spec)
 """

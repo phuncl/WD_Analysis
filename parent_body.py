@@ -188,29 +188,28 @@ erracc_absSi[np.argwhere(np.asarray([accreted_abs[x][1] for x in abundances.keys
 #acc_mabs = np.asarray(list(accreted_Mabs.values()))/mSi / mBE_ZSi
 
 
-# CALCULATE STEADY STATE ABUNDANCES
-""" BROKEN BY ERRORS
-mSiSS = accreted_Mabs[14]/np.power(10, elements[14][4]) # MSi / tSi
-mOSS = accreted_Mabs[8]/np.power(10, elements[8][4]) # MO/tO
+
+# Steady State abundances
+mSiSS = accreted_Mabs[14][0]/np.power(10, elements[14][4]) # MSi/tSi
+mOSS = accreted_Mabs[8][0]/np.power(10, elements[8][4]) # MO/tO
 
 SS_mabs = {} # abundances in steady state relative to Si
 SS_absO = {}
 for z in abundances:
     if elements[z][4] != 0: # ie if I have a timescale
         # PB abundance relative to Si ~= MZ/MSi * tSi/tZ
-        mZSS = accreted_Mabs[z]/np.power(10,elements[z][4]) # MZ/tZ
+        mZSS = accreted_Mabs[z][0]/np.power(10,elements[z][4]) # MZ/tZ
         # relative mass abundances in PB
         SS_mabs[z] = mZSS/mSiSS # = MZ/MSi * tSi/tZ (Jura Young 2017)
-        
         SS_absO[z] = mZSS/mOSS * elements[8][1]/elements[z][1] # = nZ/nO * tO/tZ = num abund/O
         # ie num abundance in pb relative to O
     else:
         SS_mabs[z] = -1
         print('No timescale for {}'.format(elements[z][0]))
-
+        
 acc_mabsSS = np.asarray(list(SS_mabs.values()))/ mBE_ZSi
 acc_mabsSS[acc_mabsSS<0] = None
-"""
+
 
 
 # plot ___ relative to bulk earth
@@ -271,7 +270,7 @@ a1.legend()
 plt.show()
 """
 
-acc_absSi_CI = np.asarray(list(accreted_abs.values()))/nSi / CI_ZSi
+acc_absSi_CI = np.asarray(list(accreted_abs.values()))[:,0]/nSi / CI_ZSi
 BECI_ZSi = BE_ZSi / CI_ZSi
 solCI_ZSi = sol_ZSi / CI_ZSi
 
@@ -301,9 +300,15 @@ for z in abundances:
         pb_acc[z] = [nZ, mZ] # [numb abundance, mass abundance] in cvz so in pb (min), early phase
 
 
-# simple total mass, from sum of observed metals (no H)
+# total Z mass in photosphere, from sum of observed metals (no H)
 totmass = np.sum(np.asarray(list(pb_acc.values()))[:,1])
-print('Total Mass in photosphere = {:.3e}g'.format(totmass))
+print('Total Mass in photosphere = {:.3e} g'.format(totmass))
+
+
+# H mass in photosphere
+nH = abundances[1][2]*nHe
+mH = nH * elements[1][1] * AMU
+print('Hydrogen mass in photosphere = {:.3e} g'.format(mH))
 
 # mass given apparent Chondrite composition?
 
@@ -396,4 +401,4 @@ for z in pb_acc:
 
 acc_rates = np.asarray(acc_m) / np.asarray(tau_sink)
 sum_accrate = np.sum(acc_rates)
-print('Summed accretion rate from {} elements = {:.3e}'.format(len(acc_rates), sum_accrate))
+print('Summed accretion rate from {} elements = {:.3e} g'.format(len(acc_rates), sum_accrate))

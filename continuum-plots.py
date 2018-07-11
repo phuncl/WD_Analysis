@@ -89,6 +89,7 @@ def rescale_optspectrum(spec_data, filters, mags=None, errmags=None, fluxs=None,
     
     return spec_output
 
+
 def redshift_wavelengths(data_array, beta):
     """Apply redshift to column one of an array"""
     if len(data_array.shape) > 1:
@@ -153,6 +154,8 @@ spec_whtb_resc = rescale_optspectrum(spec_whtb, phot_filters, fluxs=phot_fluxes,
 
 spec_phot = np.genfromtxt('optical/int_photrescaled.dat')
 
+spec_xsh_uvb = np.genfromtxt('')
+
 spec_model = np.genfromtxt('models/subgrid2018/DBA_18150.0_8.1H-1.1.dk')
 spec_model[:,1] *= 0.25e-8
 spec_model, Av = rd.deredden_fix(redshift_wavelengths(spec_model, BETA), -0.01)
@@ -182,11 +185,11 @@ a[2].plot(spec_model[:,0], spec_model[:,1], 'r')
 a[2].set_xlim(auto=True)
 a[2].set_ylim(auto=True)
 a[2].set_yscale('log')
-plot_phot(apass, a[2], col='orange')
-plot_phot(twomass, a[2], col='darkmagenta')
-plot_phot(galex, a[2], col='blue')
-plot_phot(panstarrs, a[2], col='green')
-plot_phot(gaia, a[2], col='cyan')
+plot_phot(apass, a[2], col='orange', label='APASS')
+plot_phot(twomass, a[2], col='darkmagenta', label='2MASS')
+plot_phot(galex, a[2], col='blue', label='GALEX')
+plot_phot(panstarrs, a[2], col='green', label='Pan-STARRS')
+plot_phot(gaia, a[2], col='cyan', label='Gaia')
 #a[2].errorbar(phot_wavs, phot_fluxes, phot_errfluxes, None, 'k.')
 a[2].set_xlabel('Wavelength [\AA]')
 plt.tight_layout()
