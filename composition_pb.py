@@ -120,7 +120,7 @@ BE = {
 
 # metal oxide forming elements and their ratio of atoms to oxygen
 metal_oxides = {
-6:  2,
+#6:  2,
 11: 0.5,
 12: 1,
 13: 1.5,
@@ -175,168 +175,80 @@ class pb:
     def __init__(self, phase=''):
         self.composition = {} # add NUMBERS of atoms to this
         self.comp = {} # add ABUNDANCES of atoms/Si to this
+        self.numbers = {}
         self.phase = phase
         """ as relative abundances are counted vs silicon,
         this nuber abundance is that * number of Si inferred by whatever calculation
         """
     
-    def add_elmnt(self, z, n, e):
-        self.composition[z] = [n, e]
-        
-        
-    def add_elmntsamp(self, z, n):
-        """Contains Z/Si vals scaled by phase of accretion correction"""
-        self.comp[z] = n
+    def number(self, a, b):
+        self.numbers[a] = b
     
     
-    def cal(self, ):
-        self.omc = np.copy(self.comp[8])
-        self.Of = {}
-        self.loerrs, self.hierrs = [], []
-        runo = 1
-        runerlo = []
-        runerhi = []
-        
-        runznum = np.zeros(100000,)
-        self.oxyfrac = {}
-        
+    def dothething(self, ):
+        """Numbers here for heavy metals are less than actually calculated """
+        o_samples = np.copy(self.numbers[8])
+        np.random.shuffle(o_samples)
+        on = np.median(o_samples)
+        z_total = np.zeros(len(o_samples))
+        self.zonumbers = {}
         for x in [m for m in metal_oxides if m in [d.z for d in detections]]:
-            np.random.shuffle(self.comp[8])
-            np.random.shuffle(self.comp[x])
-            zofracsamp = self.comp[x]/self.comp[8] # thus the median and error for each metal will include oxygen error
-            self.omc -= zofracsamp
-            zofracsamp = np.sort(zofracsamp)
-            # calculate median, -err, +err
-            zmed, zlo, zhi = np.median(zofracsamp), np.median(zofracsamp)-zofracsamp[len(zofracsamp)//6], zofracsamp[-1*len(zofracsamp)//6]-np.median(zofracsamp)
-            self.Of[x] = [zmed, zlo, zhi]
-            runo -= zmed # for direct calculation
-            runerlo.append(zlo)
-            runerhi.append(zhi)
-            
-            runznum += self.comp[x]*Si.nabund*metal_oxides[x] # want to add this UNSORTED
-            zonum = (self.comp[x]*Si.nabund*metal_oxides[x]).sort() # no. O atoms taken by this metal
-            zonum_med = np.median(zonum)
-            zonum_lo, zonum_hi = zonum_med-zonum[166667], zonum[833333]-zonum_med
-            self.oxyfrac[x] = [zonum_med, zonum_min, zonum_man]
-            
-        np.sort(self.omc)
-        self.MC_ostats = [np.median(self.omc)/np.median(self.comp[8]),
-                            (np.median(self.omc)-self.omc[166667])/np.median(self.comp[8]), 
-                            (self.omc[833333]-np.median(self.omc))/np.median(self.comp[8])]
-        self.dir_ostats = [runo, np.sqrt(np.sum(np.square(runerlo))), np.sqrt(np.sum(np.square(runerhi)))]
-        
-        self.znum_ofrac = runznum/(self.comp[8]*Si.nabund) # divide out range of allowed
-        np.sort(self.znum_ofrac)
-        self.zresults = [np.median(self.znum_ofrac),
-                            np.median(self.znum_ofrac)-self.znum_ofrac[133333],
-                            self.znum_ofrac[866667]-np.median(self.znum_ofrac)]
-        self.ofractot = np.sum([self.oxyfrac[k][0] for k in self.oxyfrac])
-        self.ofracminus = np.sqrt(np.mean(np.square([self.oxyfrac[k][1] for k in self.oxyfrac])))
-        self.ofracplus = np.sqrt(np.mean(np.square([self.oxyfrac[k][2] for k in self.oxyfrac])))
-        
-        
-        print('From MC: O xs fraction = {:.3f} + {:.4f} - {:.4f}'.format(self.MC_ostats[0], self.MC_ostats[2], self.MC_ostats[1]))
-        print('From direct: O xs fraction = {:.3f} + {:.4f} - {:.4f}'.format(self.dir_ostats[0], self.dir_ostats[2], self.dir_ostats[1]))
-        
-        print('From numeric MC: O xs fraction = {:.3f} + {:.4f} - {:.4f}'.format(self.dir_ostats[0], self.dir_ostats[2], self.dir_ostats[1]))
-        print('From numeric direct: O xs fraction = {:.3f} + {:.4f} - {:.4f}'.format(self.dir_ostats[0], self.dir_ostats[2], self.dir_ostats[1]))
-    
-    def calco(self, ):
-        self.mc_o = self.comp[8]
-        self.O = np.mean(self.mc_o)
-        self.Ofrac = {}
-        self.Oxs_sample = self.comp[8]
-        np.random.shuffle(self.Oxs_sample)
-        for x in [m for m in metal_oxides if m in [d.z for d in detections]]:
-            np.random.shuffle(self.comp[x])
-            np.random.shuffle(self.mc_o)
-            zo = np.sort(self.comp[x]/self.O)
-            self.Ofrac[x] = (np.mean(zo), np.mean(zo)-zo[166667], zo[833333]-np.mean(zo))
-            np.random.shuffle(self.comp[x])
-            self.Oxs_sample -= self.comp[x]
-        # present fractional numbers
-        self.Oxs_sample.sort()
-        self.Oexcess = np.mean(self.Oxs_sample)/self.O
-        self.err_Oexcess = [self.Oxs_sample[166667]/self.O, self.Oxs_sample[833333]/self.O] # estimate from percentiles
-        #self.e2_Oexcess = [np.sqrt(np.sum(np.square(self.loerrs))), np.sqrt(np.sum(np.square(self.hierrs)))] #estimate from RMS sum
-        print('Fraction of O in excess in {} phase = {:.3f} + {:.4f} - {:.4f}'.format(self.phase, self.Oexcess, self.err_Oexcess[0], self.err_Oexcess[1]))
-        #print('Fraction of O in excess in {} phase = {:.3f} + {:.4f} - {:.4f}'.format(self.phase, self.Oexcess, self.e2_Oexcess[0], self.e2_Oexcess[1]))
-        
-    
-    def parent_comp(self,):
-        self.nOxs = self.composition[8][0]
-        for x in [m for m in metal_oxides if m in [d.z for d in detections]]:
-            self.nOxs -= self.composition[x][0]*metal_oxides[x]
-        if self.nOxs < 0:
-            self.nOxs = 0
-        self.h2omass = self.nOxs * AMU * 18
-        self.h2omassfrac = self.h2omass/minimum_mass
-        print('Water mass fraction of {:.2f} ({:.2e} g)'.format(self.h2omassfrac, self.h2omass))
+            z_total += self.numbers[x]*metal_oxides[x]
+            np.random.shuffle(z_total)
+            mmed = np.median(self.numbers[x])*metal_oxides[x]/on
+            self.zonumbers[x] = [mmed,
+                                [[mmed - self.numbers[x][166667]*metal_oxides[x]/on],
+                                [self.numbers[x][833333]*metal_oxides[x]/on - mmed]]]
+        self.zz = np.copy(z_total)
+        oxs_samples = (o_samples - z_total)/on # number of unexplained o atoms - can be more than 1 if sampled O > median O
+        self.oxs_lineup = np.sort(oxs_samples)
         """
-        self.nOxssbase = np.log10([self.composition[8][0]]*10000)
-        self.nOxss = np.log10([self.composition[8][0]]*10000)
-        for x in [m for m in metal_oxides if m in [d.z for d in detections]]:
-            self.nOxss = np.log10(np.power(10, self.nOxss) - np.power(10, np.log10(self.composition[x][0]), np.log10(self.composition[x][1]), 10000))
-            #self.nOxss = np.log10(np.power(10, self.nOxss) - np.random.lognormal(), 10000))
-        self.nOxs, self.err_nOxs = 10**np.mean(self.nOxss), np.std(self.nOxss)
+        plt.figure()
+        a = plt.gca()
+        a.hist(oxs_samples, 500)
+        a.axvline(np.median(oxs_samples), color='red')
+        #a.axvline(np.mean(oxs_samples), color='orange')
+        a.axvline(self.oxs_lineup[166667], color='green')
+        a.axvline(self.oxs_lineup[833333], color='green')
+        plt.show(block=False)
         """
-
-def plot_O(ax, comp, y):
-    """"""
-    o = comp[8][0]
-    run_tot = 0
-    ax.barh(y, comp[26][0]/o, color='red', label='Fe')
-    run_tot += comp[26][0]/o
-    ax.barh(y, comp[14][0]*2/o, left=run_tot, color='orange', label='Si')
-    run_tot += comp[14][0]*2/o
-    ax.barh(y, comp[12][0]/o, left=run_tot, color='pink', label='Mg')
-    run_tot += comp[12][0]/o
-    ax.barh(y, comp[13][0]*1.5/o, left=run_tot, color='purple', label='Al')
-    run_tot += comp[13][0]*1.5/o
-    ax.barh(y, comp[20][0]/o, left=run_tot, color='green', label='Ca')
-    run_tot += comp[20][0]/o
-    ax.barh(y, comp[28][0]/o, left=run_tot, color='brown', label='Ni')
-    run_tot += comp[28][0]/o
-    ax.barh(y, comp[6][0]*2/o, left=run_tot, color='yellow', label='C')
-    run_tot += comp[6][0]*2/o
-
-    if run_tot < 1:
-        ax.barh(y, 1-run_tot, left=run_tot, color='dodgerblue', label='O excess')
-    return
+        print('O excess = {:.3f} + {:.4f} - {:.4f}'.format(np.median(oxs_samples), 
+                                                self.oxs_lineup[833333]-np.median(oxs_samples),
+                                                (np.median(oxs_samples)-self.oxs_lineup[166667])))
+        
+        # calculate a water mass fraction in parent body if Oxs > 0
+        self.zonumbers[8] = [np.median(oxs_samples),
+                [(np.median(oxs_samples)-self.oxs_lineup[166667]), self.oxs_lineup[833333]-np.median(oxs_samples)]]
 
 
-def ep(x, lo, hi, y):
-    xlo = x-lo
-    xhi = hi-x
-    return([xlo,y], [xhi,y])
-
-
-def oxs_plot(ax, Ofr, y):
+def plot_zo(ax, y, dat):
     """"""
     rt = 0
-    ax.barh(y, Ofr[26][0], xerr=[[Ofr[26][1]],[Ofr[26][2]]], left=rt, color='red', label='Fe')
-    rt += Ofr[26][0]
-    ax.barh(y, Ofr[14][0]*2, xerr=[[Ofr[14][1]],[Ofr[14][2]]], left=rt, color='orange', label='Si')
-    rt += Ofr[14][0]*2
-    ax.barh(y, Ofr[12][0], xerr=[[Ofr[12][1]],[Ofr[12][2]]], left=rt, color='pink', label='Mg')
-    rt += Ofr[12][0]
-    #ax.barh(y, Ofr[13][0], xerr=[[Ofr[13][1]],[Ofr[13][2]]], left=rt, color='purple', label='Al')
-    #rt += Ofr[13][0]
-    #ax.barh(y, Ofr[20][0], xerr=[[Ofr[20][1]],[Ofr[20][2]]], left=rt, color='green', label='Ca')
-    #rt += Ofr[20][0]
-    #ax.barh(y, Ofr[28][0], left=rt, color='brown', label='Ni')
-    #rt += Ofr[28][0]
-    alcani = Ofr[13][0]*1.5+Ofr[20][0]+Ofr[28][0]
-    ax.barh(y, alcani, xerr = [[np.sqrt(np.mean(Ofr[13][1]**2+Ofr[20][1]**2+Ofr[28][1]**2))],
-                                [np.sqrt(np.mean(Ofr[13][2]**2+Ofr[20][2]**2+Ofr[28][2]**2))]],
-                                left=rt, color='green', label='Al, Ca, Ni')
-    rt += alcani
-    ax.barh(y, Ofr[6][0], xerr=[[Ofr[6][1]],[Ofr[6][2]]], left=rt, color='yellow', label='C')
-    rt += Ofr[6][0]
-
-    if rt < 1:
-        ax.barh(y, 1-rt, left=rt, color='dodgerblue', label='O excess')
-    return
+    ax.barh(y, dat[26][0], xerr=dat[26][1], left=rt, color='firebrick', label='Fe', capsize=5)
+    rt += dat[26][0]
+    ax.barh(y, dat[14][0], xerr=dat[14][1], left=rt, color='coral', label='Si', capsize=5)
+    rt += dat[14][0]
+    ax.barh(y, dat[12][0], xerr=dat[12][1], left=rt, color='gold', label='Mg', capsize=5)
+    rt += dat[12][0]
+    #ax.barh(y, dat[20][0], xerr=dat[20][1], left=rt, color='lightgreen', label='Ca')
+    #rt += dat[20][0]
+    #ax.barh(y, dat[13][0], xerr=dat[13][1], left=rt, color='pink', label='Al')
+    #rt += dat[13][0]
+    #ax.barh(y, dat[28][0], xerr=dat[28][1], left=rt, color='orchid', label='Ni')
+    #rt += dat[28][0]
+    others = dat[20][0] + dat[13][0] + dat[28][0]
+    othererrlo = np.sqrt(dat[20][1][0][0]**2 + dat[13][1][0][0]**2 + dat[28][1][0][0]**2)
+    othererrhi = np.sqrt(dat[20][1][1][0]**2 + dat[13][1][1][0]**2 + dat[28][1][1][0]**2)
+    ax.barh(y, others, xerr=[[othererrlo],[othererrhi]], left=rt, color='forestgreen', label='Al, Ca, Ni', capsize=5)
+    rt += others
+    if dat[8][0] > 0:
+        #ax.barh(y, dat[8][0], left=rt, xerr=dat[8][1], color='dodgerblue', label='O excess', ecolor='dimgrey')
+        #ax.barh(y, dat[8][0], left=rt, color='navy', label='O excess',)
+        ax.barh(y, 1-rt, left=rt, color='royalblue', label='O excess',)
+        ax.barh(y, dat[8][1][0]+dat[8][1][1], left=1-dat[8][1][0], color='silver', height=0.1)
+    else:
+        ax.barh(y, dat[8][1][0]+dat[8][1][1], left=rt-dat[8][1][0], color='silver', height=0.1)
+    # this doesn't quite add up to 1 - related to median as value?
 
 
 def sample_log10normal(x, e):
@@ -407,8 +319,8 @@ print('Minimum Mass of parent body = {:.3e} g'.format(minimum_mass))
 # parent body calculations
 
 early_pb = pb('early')
-steady_pb = pb()
-late1350_pb = pb()
+steady_pb = pb('steady')
+late1350_pb = pb('Late')
 
 plt.figure()
 a = plt.gca()
@@ -428,73 +340,51 @@ for dcount, d in enumerate(detections):
     
     early_ZSi, early_lo, early_hi = d.nab[0:3]/Si.nabund
     early_samp = d.nab[3]/Si.nabund
-    
+    early_pb.number(d.z, early_samp*Si.nabund)
     early_err = [[early_lo/BE[d.z]], [early_hi/BE[d.z]]]
-    a.errorbar(dcount-0.05, early_ZSi/BE[d.z], yerr=early_err, ms=4, fmt='go')
-    early_pb.add_elmntsamp(d.z, early_samp)
-    early_pb.add_elmnt(d.z, early_ZSi*Si.nabund, early_hi*Si.nabund)
+    a.errorbar(dcount-0.05, early_ZSi/BE[d.z], yerr=early_err, ms=4, fmt='go', label='Early Phase')
     # error bars are same size in all phases - could just show on one point type?
-    #print('{} :  {:.2e} + {:.2e} - {:.2e}'.format(d.z, early_ZSi, early_hi, early_lo))
 
-    #steady_ZSi, steady_lo, steady_hi, steady_samp = d.nab/Si.nabund * Si.tz/d.tz
-    #steady_err = [[steady_lo/BE[d.z]],[steady_lo/BE[d.z]]]
-    #steady_pb.add_elmnt(d.z, steady_ZSi * Si.nabund)
+    steady_ZSi, steady_lo, steady_hi = d.nab[0:3]/Si.nabund * Si.tz/d.tz
+    steady_samp = d.nab[3]/Si.nabund * Si.tz/d.tz
+    steady_pb.number(d.z, steady_samp*Si.nabund)
+    steady_err = [[steady_lo/BE[d.z]],[steady_hi/BE[d.z]]]
     #a.scatter(dcount, steady_ZSi/BE[d.z], 8, c='b', marker='s')
-    #a.errorbar(dcount, steady_ZSi/BE[d.z], yerr=steady_err, ms=4, fmt='rs')
+    a.errorbar(dcount, steady_ZSi/BE[d.z], yerr=steady_err, ms=4, fmt='rs', label='Steady Phase')
     
-    #late1350_ZSi, late1350_lo, late_1350_hi, late_samp = d.nab/Si.nabund * np.exp(1350*(1/d.tz - 1/Si.tz))
-    #late1350_pb.add_elmnt(d.z, late1350_ZSi*Si.nabund)
+    late1350_ZSi, late1350_lo, late1350_hi = d.nab[:3]/Si.nabund * np.exp(1350*(1/d.tz - 1/Si.tz))
+    late1350_samp = d.nab[3]/Si.nabund * np.exp(1350*(1/d.tz - 1/Si.tz))
+    late1350_pb.number(d.z, late1350_samp*Si.nabund)
+    late_err = [[late1350_lo/BE[d.z]],[late1350_hi/BE[d.z]]]
     #a.scatter(dcount+.05, late1350_ZSi/BE[d.z], 10, c='hotpink', marker='*')
+    a.errorbar(dcount+0.05, late1350_ZSi/BE[d.z], yerr=late_err, ms=4, color='navy', fmt='*', label='Late Phase')
 
-plt.legend()
+handles, labels = a.get_legend_handles_labels()
+by_label = OrderedDict(zip(labels, handles))
+plt.legend(by_label.values(), by_label.keys())
 plt.xticks(range(0, len([d.el for d in detections])), [d.el for d in detections])
 plt.show(block=False)
 
-
-early_pb.parent_comp()
-#steady_pb.parent_comp()
-#late1350_pb.parent_comp()
-
-plt.figure()
-a = plt.gca()
-a.set_xlabel('Oxygen source')
-a.set_ylabel('Accretion Phase')
-
-plot_O(a, early_pb.composition, 0)
-#plot_O(a, steady_pb.composition, 1)
-#plot_O(a, late1350_pb.composition, 2)
-plt.axvline(1, color='grey')
-plt.yticks(range(0, 3), ['Early\nPhase', 'Steady\nState', 'Late\nPhase\n(1350 yr)'])
-a.set_xlim(0, 1.4)
-xvals=a.get_xticks()
-a.set_xticklabels(['{:.0%}'.format(x) for x in xvals if x <=1])
-handles, labels = a.get_legend_handles_labels()
-by_label = OrderedDict(zip(labels, handles))
-plt.legend(by_label.values(), by_label.keys())
-plt.show(block=False)
-
-""""""
-early_pb.calco()
+early_pb.dothething()
+steady_pb.dothething()
+late1350_pb.dothething()
 
 plt.figure()
 a = plt.gca()
 a.set_xlabel('Oxygen source')
 a.set_ylabel('Accretion Phase')
-
-oxs_plot(a, early_pb.Ofrac, 0)
-#plot_O(a, steady_pb.composition, 1)
-#plot_O(a, late1350_pb.composition, 2)
-plt.axvline(1, color='grey')
-plt.yticks(range(0, 3), ['Early\nPhase', 'Steady\nState', 'Late\nPhase\n(1350 yr)'])
-a.set_xlim(0, 1.4)
 xvals=a.get_xticks()
-a.set_xticklabels(['{:.0%}'.format(x) for x in xvals if x <=1])
+a.set_xticks(np.arange(0,6.,0.5))
+a.set_xticklabels(['{:.0%}'.format(x) for x in np.arange(0,6.,0.5) if x <=1])
+
+plot_zo(a, 1, early_pb.zonumbers)
+plot_zo(a, 2, steady_pb.zonumbers)
+plot_zo(a, 3, late1350_pb.zonumbers)
+
+a.axvline(1, color='grey', ls='--')
 handles, labels = a.get_legend_handles_labels()
 by_label = OrderedDict(zip(labels, handles))
 plt.legend(by_label.values(), by_label.keys())
 plt.show(block=False)
 
 
-
-print('New Method:')
-early_pb.cal()
